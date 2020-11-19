@@ -27,6 +27,8 @@ cmake .. && make
 ```
 ## Training from Scratch
 You should flow [Pytroch-SSD-repo](https://github.com/qfgaohao/pytorch-ssd) to train your own ssd model. If you work on Jetson devices, you can also flow this well-known [Jetson-Inference project](https://github.com/dusty-nv/jetson-inference/blob/master/docs/pytorch-ssd.md). This TensorRT version is also suitable for the Jetson-Inference SSD model. when get trained .pth, 
+* Torch version: 1.6.0
+* Show Network Architecture: https://netron.app/
 ```
 python3 onnx_export.py --model-dir=models/
 
