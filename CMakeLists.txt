@@ -43,7 +43,7 @@ SET(CUDA_RT /usr/local/cuda-10.2/targets/${ARCH}-linux)
 set(NVINFER_PATH /usr/lib/aarch64-linux-gnu/)
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
-add_library(sort SHARED src/kalman_filter.cpp  src/munkres.cpp src/track.cpp src/tracker.cpp) 
+add_library(sort SHARED src/kalman_filter.cpp  src/munkres.cpp src/track.cpp src/tracker.cpp src/utils.cpp) 
 file(GLOB detectnetSources *.cpp common/logger.cpp lib/gpu_nms.cpp lib/nms_kernel.cu )
 file(GLOB detectnetIncludes *.h lib/gpu_nms.hpp)
 

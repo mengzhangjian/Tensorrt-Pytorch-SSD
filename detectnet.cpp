@@ -251,6 +251,7 @@ bool OnnxSSD::constructNetwork(SampleUniquePtr<nvinfer1::IBuilder>& builder,
 //!          sets inputs and executes the engine.
 //!
 
+/*
 bool OnnxSSD::infer()
 {
     samplesCommon::BufferManager buffers(mEngine);
@@ -290,26 +291,34 @@ bool OnnxSSD::infer()
         colors.emplace_back(cv::Scalar(dis(gen) * factor, dis(gen) * factor, dis(gen) * factor));
     }
     Tracker tracker;
-    std::vector<cv::Point> s;
+    std::vector<cv::Point> pig_area;
     cv::FileStorage fs("config.yaml", cv::FileStorage::READ);
     // for(int i = 0; i< 100; i ++)
     // {
     //     s.emplace_back(cv::Point(i, i + 1));
     // }
     // fs << "Area" << s;
-    fs["Area"] >> s;
-    std::cout << s.size() << std::endl;
-    for(int i =0; i < 100; i++)
-    {
-        std::cout << s[i].x << ' ' << s[i].y << std::endl;
-    }
+    fs["Area"] >> pig_area;
+    // std::cout << pig_area.size() << std::endl;
+    // // if(!(pig_area.size() % 2))
+    //     // std::cout>>"please check pig area point number"<<std::endl;
+    // for(int i =0; i < pig_area.size(); i++)
+    // {
+    //     std::cout << pig_area[i].x << ' ' << pig_area[i].y << std::endl;
+    // }
+    const cv::Point *pts = (const cv::Point*)cv::Mat(pig_area).data;
+    int npts = cv::Mat(pig_area).rows;
+    std::set<int> previous_tracker_id;
+    int count=0;
     while(1)
     {
         cv::Mat frame;
         cap >> frame;
         if(frame.empty())
             break;
-
+        cv::polylines(frame, &pts, &npts, 1, false, cv::Scalar(0, 255, 0), 3);
+        cv::line(frame, pig_area[0], pig_area[pig_area.size() - 1], cv::Scalar(0, 0, 255), 3);
+        
         if (!processInput(buffers, frame))
             {
                 return false;
@@ -328,7 +337,7 @@ bool OnnxSSD::infer()
 
             // Post-process detections and verify results
         std::vector<cv::Rect> detections = verifyOutput(buffers, frame);
-        /*** Run SORT tracker ***/
+        
         tracker.Run(detections);
         const auto tracks = tracker.GetTracks();
         for (auto &trk : tracks) 
@@ -340,9 +349,21 @@ bool OnnxSSD::infer()
             cv::putText(frame, std::to_string(trk.first), cv::Point(bbox.tl().x, bbox.tl().y - 10),
                         cv::FONT_HERSHEY_DUPLEX, 2, cv::Scalar(255, 255, 255), 2);
             cv::rectangle(frame, bbox, colors[trk.first % kNumColors], 3);
+             cv::Point p0 = cv::Point(bbox.tl().x, bbox.tl().y);
+            cv::Point p1 = cv::Point(bbox.tl().x + bbox.width, bbox.tl().y);
+
+            if(doIntersect(p0, p1, pig_area[0], pig_area[pig_area.size() - 1]))
+            {
+                if(previous_tracker_id.count(trk.first)==0)
+                {
+                    count++;
+                    previous_tracker_id.emplace(trk.first);
+                    std::cout<<"pig number: "<<count<<std::endl;
             }
         }
-
+            }
+        }
+       
         cv::imshow("img", frame);
         cv::waitKey(1);
 
@@ -350,7 +371,46 @@ bool OnnxSSD::infer()
 
     return true;
 }
+*/
+bool OnnxSSD::infer()
+{
+    samplesCommon::BufferManager buffers(mEngine);
 
+    auto context = SampleUniquePtr<nvinfer1::IExecutionContext>(mEngine->createExecutionContext());
+
+    if (!context)
+    {
+        return false;
+    }
+
+    // Read the input data into the managed buffers
+    assert(mParams.inputTensorNames.size() == 1);
+    
+    cv::Mat frame = cv::imread("test.jpg");
+    if (!processInput(buffers, frame))
+        {
+            return false;
+        }
+
+    // Memcpy from host input buffers to device input buffers
+    buffers.copyInputToDevice();
+
+    bool status = context->execute(mParams.batchSize, buffers.getDeviceBindings().data());
+    if (!status)
+    {
+        return false;
+    }
+    // Memcpy from device output buffers to host output buffers
+    buffers.copyOutputToHost();
+
+    // Post-process detections and verify results
+    std::vector<cv::Rect> detections = verifyOutput(buffers, frame);
+        
+    cv::imshow("img", frame);
+    cv::waitKey(0);
+
+    return true;
+}
 //!
 //! \brief Reads the input and mean data, preprocesses, and stores the result in a managed buffer
 //!
@@ -408,13 +468,13 @@ std::vector<cv::Rect> OnnxSSD::verifyOutput(const samplesCommon::BufferManager& 
     std::vector<std::string> classes(outputClsSize);
 
     // Gather class labels
-    // std::ifstream labelFile(locateFile(mParams.labelsFileName, mParams.dataDirs));
-    // std::string line;
-    // int id = 0;
-    // while (getline(labelFile, line))
-    // {
-    //     classes[id++] = line;
-    // }
+    std::ifstream labelFile(locateFile(mParams.labelsFileName, mParams.dataDirs));
+    std::string line;
+    int id = 0;
+    while (getline(labelFile, line))
+    {
+        classes[id++] = line;
+    }
     float scale_w = image.cols / (float)inputW;
     float scale_h = image.rows / (float)inputH;
     bool pass = true;
@@ -423,23 +483,27 @@ std::vector<cv::Rect> OnnxSSD::verifyOutput(const samplesCommon::BufferManager& 
     for(int i = 0; i < 3000; i++)
     {
         std::vector<float> conf;
-        conf.emplace_back(scores[i * 2]);
-        conf.emplace_back(scores[i * 2 + 1]);
+        for(int j = 0; j < outputClsSize; j++)
+        {
+            conf.emplace_back(scores[i * outputClsSize + j]);
+        }
         int max_index = std::max_element(conf.begin(), conf.end()) - conf.begin();
         if (max_index != 0)
         {   
+            if(conf[max_index] < 0.5)
+                continue;
             samplesCommon::Bbox b;
             int left = bboxes[i * 4] * scale_w * 300;
             int top = bboxes[i * 4 + 1] * scale_h * 300;
             int right = bboxes[ i * 4 + 2] * scale_w * 300;
             int bottom = bboxes[i * 4 + 3] * scale_h * 300;
-            b.xmin = left;
-            b.ymin = top;
+            b.xmin = std::max(0, left);
+            b.ymin = std::max(0, top);
             b.xmax = right;
             b.ymax = bottom;
             b.score = conf[max_index];
+            b.cls_idx = max_index;
             BBox.emplace_back(b);
-            // cv::rectangle(image, cv::Point(left, top), cv::Point(right, bottom), cv::Scalar(0,0,255), 3);
         }
         conf.clear();
     }
@@ -452,8 +516,18 @@ std::vector<cv::Rect> OnnxSSD::verifyOutput(const samplesCommon::BufferManager& 
         int top = BBox[keep_index[i]].ymin;
         int right = BBox[keep_index[i]].xmax;
         int bottom = BBox[keep_index[i]].ymax;
-        // cv::rectangle(image, cv::Point(left, top), cv::Point(right, bottom), cv::Scalar(0,255,0), 3);
-        bbox_per_frame.emplace_back(left, top, right - left, bottom - top);
+        int width = right - left;
+        int height = bottom - top;
+        int center_x = left + width / 2;
+        cv::rectangle(image, cv::Point(left, top), cv::Point(right, bottom), cv::Scalar(0, 0, 255), 3);
+        cv::putText(image, classes[BBox[keep_index[i]].cls_idx],  cv::Point(left, top), cv::FONT_HERSHEY_COMPLEX, 2, cv::Scalar(0, 255, 255), 2, 8, 0);
+        /****comment for Count_Pig demo*****/
+        /*
+        if(center_x < 1600 && center_x > 500){
+        bbox_per_frame.emplace_back(left, top, width, height);
+        }
+        */
+        bbox_per_frame.emplace_back(left, top, width, height);
     }
 
     return bbox_per_frame;
@@ -466,16 +540,14 @@ SampleOnnxSSDParams initializeSampleParams(const samplesCommon::Args& args)
     {
         params.dataDirs.push_back("data/ssd/");
         params.dataDirs.push_back("data/ssd/VOC2007/");
-        params.dataDirs.push_back("data/ssd/VOC2007/PPMImages/");
         params.dataDirs.push_back("data/samples/ssd/");
         params.dataDirs.push_back("data/samples/ssd/VOC2007/");
-        params.dataDirs.push_back("data/samples/ssd/VOC2007/PPMImages/");
     }
     else //!< Use the data directory provided by the user
     {
         params.dataDirs = args.dataDirs;
     }
-    params.onnxFileName = "ssd-mobilenet.onnx";
+    params.onnxFileName = "ssd-mobilenet-coco.onnx";
     params.labelsFileName = "labels.txt";
     params.inputTensorNames.push_back("input_0");
     params.batchSize = 1;
@@ -485,11 +557,11 @@ SampleOnnxSSDParams initializeSampleParams(const samplesCommon::Args& args)
     params.int8 = args.runInInt8;
     params.fp16 = args.runInFp16;
 
-    params.outputClsSize = 2;
+    params.outputClsSize = 21;
     params.calBatchSize = 10;
     params.nbCalBatches = 10;
     params.keepTopK = 100;
-    params.visualThreshold = 0.5;
+    params.visualThreshold = 0.6;
 
     return params;
 }
