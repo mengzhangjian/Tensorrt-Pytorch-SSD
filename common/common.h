@@ -673,6 +673,7 @@ struct Bbox
 
     int xmin, ymin, xmax, ymax;
     float score;
+    int cls_idx;
 };
 template <int C, int H, int W>
 inline void readPPMFile(const std::string& filename, samplesCommon::PPM<C, H, W>& ppm)

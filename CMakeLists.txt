@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8)
-project(Count-Pig)
+project(TensorRT-SSD)
 
 # set CUDA
 find_package(CUDA)
